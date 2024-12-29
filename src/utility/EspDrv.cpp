@@ -21,6 +21,7 @@ along with The Arduino WiFiEsp library.  If not, see
 
 #include "utility/EspDrv.h"
 #include "utility/debug.h"
+#include "utility/delay.h"
 
 
 #define NUMESPTAGS 5
@@ -46,7 +47,7 @@ typedef enum
 
 Stream *EspDrv::espSerial;
 
-RingBuffer EspDrv::ringBuf(32);
+RingBuffer EspDrv::ringBuf(128);
 
 // Array of data to cache the information related to the networks discovered
 char 	EspDrv::_networkSsid[][WL_SSID_MAX_LENGTH] = {{"1"},{"2"},{"3"},{"4"},{"5"}};
@@ -82,13 +83,13 @@ void EspDrv::wifiDriverInit(Stream *espSerial)
 			initOK=true;
 			break;
 		}
-		delay(1000);
+		WDTDelay(1000);
 	}
 
 	if (!initOK)
 	{
 		LOGERROR(F("Cannot initialize ESP module"));
-		delay(5000);
+		WDTDelay(5000);
 		return;
 	}
 
@@ -102,7 +103,7 @@ void EspDrv::wifiDriverInit(Stream *espSerial)
 		fwVersion[1] != '.')
 	{
 		LOGWARN1(F("Warning: Unsupported firmware"), fwVersion);
-		delay(4000);
+		WDTDelay(4000);
 	}
 	else
 	{
@@ -116,7 +117,7 @@ void EspDrv::reset()
 	LOGDEBUG(F("> reset"));
 
 	sendCmd(F("AT+RST"));
-	delay(3000);
+	WDTDelay(3000);
 	espEmptyBuf(false);  // empty dirty characters from the buffer
 
 	// disable echo of commands
@@ -124,7 +125,7 @@ void EspDrv::reset()
 
 	// set station mode
 	sendCmd(F("AT+CWMODE=1"));
-	delay(200);
+	WDTDelay(200);
 
 	// set multiple connections mode
 	sendCmd(F("AT+CIPMUX=1"));
@@ -138,7 +139,7 @@ void EspDrv::reset()
 
 	// enable DHCP
 	sendCmd(F("AT+CWDHCP=1,1"));
-	delay(200);
+	WDTDelay(200);
 }
 
 
@@ -163,7 +164,7 @@ bool EspDrv::wifiConnect(const char* ssid, const char* passphrase)
 	LOGWARN1(F("Failed connecting to"), ssid);
 
 	// clean additional messages logged after the FAIL tag
-	delay(1000);
+	WDTDelay(1000);
 	espEmptyBuf(false);
 
 	return false;
@@ -213,7 +214,7 @@ int8_t EspDrv::disconnect()
 		return WL_DISCONNECTED;
 
 	// wait and clear any additional message
-	delay(2000);
+	WDTDelay(2000);
 	espEmptyBuf(false);
 
 	return WL_DISCONNECTED;
@@ -227,13 +228,13 @@ void EspDrv::config(IPAddress ip)
 	sendCmd(F("AT+CWDHCP_CUR=1,0"));
 	
 	// it seems we need to wait here...
-	delay(500);
+	WDTDelay(500);
 	
 	char buf[16];
 	sprintf_P(buf, PSTR("%d.%d.%d.%d"), ip[0], ip[1], ip[2], ip[3]);
 
 	int ret = sendCmd(F("AT+CIPSTA_CUR=\"%s\""), 2000, buf);
-	delay(500);
+	WDTDelay(500);
 
 	if (ret==TAG_OK)
 	{
@@ -251,13 +252,13 @@ void EspDrv::configAP(IPAddress ip)
 	sendCmd(F("AT+CWDHCP_CUR=2,0"));
 	
 	// it seems we need to wait here...
-	delay(500);
+	WDTDelay(500);
 	
 	char buf[16];
 	sprintf_P(buf, PSTR("%d.%d.%d.%d"), ip[0], ip[1], ip[2], ip[3]);
 
 	int ret = sendCmd(F("AT+CIPAP_CUR=\"%s\""), 2000, buf);
-	delay(500);
+	WDTDelay(500);
 
 	if (ret==TAG_OK)
 	{
@@ -563,7 +564,7 @@ char* EspDrv::getFwVersion()
 	fwVersion[0] = 0;
 
 	sendCmdGet(F("AT+GMR"), F("SDK version:"), F("\r\n"), fwVersion, sizeof(fwVersion));
-
+	LOGINFO(fwVersion);
     return fwVersion;
 }
 
@@ -651,6 +652,7 @@ uint16_t EspDrv::availData(uint8_t connId)
     //LOGDEBUG(bufPos);
 
 	// if there is data in the buffer
+	
 	if (_bufPos>0)
 	{
 		if (_connId==connId)
@@ -658,6 +660,7 @@ uint16_t EspDrv::availData(uint8_t connId)
 		else if (_connId==0)
 			return _bufPos;
 	}
+	
 
 
     int bytes = espSerial->available();
@@ -692,6 +695,7 @@ uint16_t EspDrv::availData(uint8_t connId)
 
 			if(_connId==connId || connId==0)
 				return _bufPos;
+			
 		}
 	}
 	return 0;
@@ -727,7 +731,7 @@ bool EspDrv::getData(uint8_t connId, uint8_t *data, bool peek, bool* connClose)
 				// after the data packet a ",CLOSED" string may be received
 				// this means that the socket is now closed
 
-				delay(5);
+				WDTDelay(5);
 
 				if (espSerial->available())
 				{
@@ -795,6 +799,7 @@ int EspDrv::getDataBuf(uint8_t connId, uint8_t *buf, uint16_t bufSize)
 
 bool EspDrv::sendData(uint8_t sock, const uint8_t *data, uint16_t len)
 {
+	LOGDEBUG("");
 	LOGDEBUG2(F("> sendData:"), sock, len);
 
 	char cmdBuf[20];
@@ -1052,9 +1057,9 @@ int EspDrv::readUntil(unsigned int timeout, const char* tag, bool findTags)
 	{
         if(espSerial->available())
 		{
-            c = (char)espSerial->read();
-			LOGDEBUG0(c);
-			ringBuf.push(c);
+            char l = (char)espSerial->read();
+			LOGDEBUG0(l);
+			ringBuf.push(l);
 
 			if (tag!=NULL)
 			{
