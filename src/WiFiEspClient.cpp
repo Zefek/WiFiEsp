@@ -24,6 +24,7 @@ along with The Arduino WiFiEsp library.  If not, see
 
 #include "utility/EspDrv.h"
 #include "utility/debug.h"
+#include "utility/delay.h"
 
 
 WiFiEspClient::WiFiEspClient() : _sock(255)
@@ -125,7 +126,7 @@ size_t WiFiEspClient::write(const uint8_t *buf, size_t size)
 	{
 		setWriteError();
 		LOGERROR1(F("Failed to write to socket"), _sock);
-		delay(4000);
+		WDTDelay(4000);
 		stop();
 		return 0;
 	}
@@ -281,7 +282,7 @@ size_t WiFiEspClient::printFSH(const __FlashStringHelper *ifsh, bool appendCrLf)
 	{
 		setWriteError();
 		LOGERROR1(F("Failed to write to socket"), _sock);
-		delay(4000);
+		WDTDelay(4000);
 		stop();
 		return 0;
 	}
